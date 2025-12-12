@@ -716,7 +716,7 @@ with tab2:
         st.markdown("### Input Customer Data")
         
         # Demographics
-        with st.expander("👤 Demographics & Profile", expanded=True):
+        with st.expander("Demographics & Profile", expanded=True):
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
@@ -1057,6 +1057,56 @@ with tab3:
     Sistem akan memprediksi churn risk untuk semua pelanggan sekaligus dan memberikan insights.
     """)
     
+    # Required columns information
+    with st.expander("Format Dataset yang Diperlukan", expanded=False):
+        st.markdown("""
+        ### Kolom Wajib dalam CSV:
+        
+        **Demographic & Account Info:**
+        - `gender` - Gender pelanggan (Female/Male)
+        - `SeniorCitizen` - Apakah senior citizen (0/1 atau Yes/No)
+        - `Partner` - Memiliki partner (Yes/No)
+        - `Dependents` - Memiliki tanggungan (Yes/No)
+        - `tenure` - Lama berlangganan dalam bulan (angka)
+        
+        **Billing Info:**
+        - `Contract` - Jenis kontrak (Month-to-month/One year/Two year)
+        - `PaperlessBilling` - Paperless billing (Yes/No)
+        - `PaymentMethod` - Metode pembayaran (Electronic check/Mailed check/Bank transfer (automatic)/Credit card (automatic))
+        - `MonthlyCharges` - Biaya bulanan (angka)
+        - `TotalCharges` - Total biaya (angka)
+        
+        **Phone Services:**
+        - `PhoneService` - Layanan telepon (Yes/No)
+        - `MultipleLines` - Multiple lines (Yes/No/No phone service)
+        
+        **Internet Services:**
+        - `InternetService` - Layanan internet (DSL/Fiber optic/No)
+        - `OnlineSecurity` - Online security (Yes/No/No internet service)
+        - `OnlineBackup` - Online backup (Yes/No/No internet service)
+        - `DeviceProtection` - Device protection (Yes/No/No internet service)
+        - `TechSupport` - Tech support (Yes/No/No internet service)
+        - `StreamingTV` - Streaming TV (Yes/No/No internet service)
+        - `StreamingMovies` - Streaming movies (Yes/No/No internet service)
+        
+        **Optional:**
+        - `customerID` - ID pelanggan (opsional, akan diabaikan saat prediksi)
+        - `Churn` - Status churn aktual (opsional, untuk perbandingan)
+        
+        ---
+        
+        ### Contoh Format:
+        ```
+        customerID,gender,SeniorCitizen,Partner,Dependents,tenure,PhoneService,...
+        7590-VHVEG,Female,0,Yes,No,1,No,...
+        5575-GNVDE,Male,0,No,No,34,Yes,...
+        ```
+        
+        📥 **Download template:** Gunakan dataset WA_Fn-UseC_-Telco-Customer-Churn.csv sebagai referensi format.
+        """)
+    
+    st.markdown("---")
+    
     # File upload
     uploaded_file = st.file_uploader(
         "Upload Customer Data (CSV)",
@@ -1066,13 +1116,111 @@ with tab3:
     
     if uploaded_file is not None:
         # Load file
-        batch_df = pd.read_csv(uploaded_file)
+        try:
+            batch_df = pd.read_csv(uploaded_file)
+        except Exception as e:
+            st.error(f"Gagal membaca file CSV: {str(e)}")
+            st.info("Pastikan file adalah CSV yang valid dengan encoding UTF-8.")
+            st.stop()
         
-        st.success(f"File loaded: {len(batch_df):,} customers")
+        # ==================== VALIDASI DATASET ====================
+        required_columns = [
+            'gender', 'SeniorCitizen', 'Partner', 'Dependents', 'tenure',
+            'PhoneService', 'MultipleLines', 'InternetService', 
+            'OnlineSecurity', 'OnlineBackup', 'DeviceProtection', 'TechSupport',
+            'StreamingTV', 'StreamingMovies', 'Contract', 'PaperlessBilling',
+            'PaymentMethod', 'MonthlyCharges', 'TotalCharges'
+        ]
+        
+        # Cek kolom yang hilang
+        missing_columns = [col for col in required_columns if col not in batch_df.columns]
+        
+        if missing_columns:
+            st.error("❌ **Dataset tidak sesuai format!**")
+            st.markdown(f"### Kolom yang hilang ({len(missing_columns)}):")
+            
+            # Tampilkan dalam 3 kolom
+            missing_col1, missing_col2, missing_col3 = st.columns(3)
+            
+            for idx, col in enumerate(missing_columns):
+                if idx % 3 == 0:
+                    missing_col1.markdown(f"- `{col}`")
+                elif idx % 3 == 1:
+                    missing_col2.markdown(f"- `{col}`")
+                else:
+                    missing_col3.markdown(f"- `{col}`")
+            
+            st.warning("""
+            ### Cara Memperbaiki:
+            
+            1. **Pastikan semua kolom wajib ada** dalam CSV Anda
+            2. **Periksa ejaan** - kolom harus persis sama (case-sensitive)
+            3. **Download template** dari dokumentasi atau gunakan format dataset training
+            4. **Periksa struktur** - pastikan tidak ada baris kosong di awal file
+            
+            Klik expander "Format Dataset yang Diperlukan" di atas untuk melihat daftar lengkap kolom yang diperlukan.
+            """)
+            st.stop()
+        
+        # Validasi tipe data dan nilai
+        validation_errors = []
+        
+        # Cek kolom numerik
+        numeric_cols = ['tenure', 'MonthlyCharges', 'TotalCharges']
+        for col in numeric_cols:
+            if col in batch_df.columns:
+                # Coba konversi ke numerik
+                batch_df[col] = pd.to_numeric(batch_df[col], errors='coerce')
+                
+                # Hitung berapa banyak nilai yang tidak valid
+                invalid_count = batch_df[col].isna().sum()
+                if invalid_count > 0:
+                    validation_errors.append(f"⚠ `{col}`: {invalid_count} nilai tidak valid (harus numerik)")
+        
+        # Cek nilai SeniorCitizen
+        if 'SeniorCitizen' in batch_df.columns:
+            unique_values = batch_df['SeniorCitizen'].unique()
+            valid_values = [0, 1, '0', '1', 'Yes', 'No', 'yes', 'no']
+            invalid_seniors = [v for v in unique_values if v not in valid_values and pd.notna(v)]
+            if invalid_seniors:
+                validation_errors.append(f"⚠ `SeniorCitizen`: Nilai tidak valid ditemukan {invalid_seniors}. Harus: 0/1 atau Yes/No")
+        
+        # Cek nilai Contract
+        if 'Contract' in batch_df.columns:
+            valid_contracts = ['Month-to-month', 'One year', 'Two year']
+            invalid_contracts = batch_df[~batch_df['Contract'].isin(valid_contracts + [np.nan])]['Contract'].unique()
+            if len(invalid_contracts) > 0:
+                validation_errors.append(f"⚠ `Contract`: Nilai tidak valid {list(invalid_contracts)}. Harus: {valid_contracts}")
+        
+        # Tampilkan peringatan validasi jika ada
+        if validation_errors:
+            st.warning("⚠ **Peringatan Validasi Data:**")
+            for error in validation_errors:
+                st.markdown(f"- {error}")
+            st.info("""
+            Dataset akan tetap diproses, tetapi hasil prediksi mungkin kurang akurat untuk baris dengan data tidak valid.
+            Sebaiknya perbaiki data terlebih dahulu untuk hasil optimal.
+            """)
+
+        st.success(f"✅ File berhasil dimuat: **{len(batch_df):,}** pelanggan")
+        
+        # Tampilkan ringkasan dataset
+        summary_col1, summary_col2, summary_col3, summary_col4 = st.columns(4)
+        
+        with summary_col1:
+            st.metric("Total Baris", f"{len(batch_df):,}")
+        with summary_col2:
+            st.metric("Total Kolom", f"{len(batch_df.columns)}")
+        with summary_col3:
+            has_customer_id = "customerID" in batch_df.columns
+            st.metric("Customer ID", "Ada" if has_customer_id else "Tidak ada")
+        with summary_col4:
+            has_churn = "Churn" in batch_df.columns
+            st.metric("Label Churn", "Ada" if has_churn else "Tidak ada")
         
         with st.expander("Preview Data", expanded=False):
             st.dataframe(batch_df.head(20), use_container_width=True)
-        
+
         # Button Analisis
         if st.button("Run Batch Analysis", use_container_width=True, type="primary"):
             try:
